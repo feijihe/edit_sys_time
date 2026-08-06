@@ -30,10 +30,6 @@ struct ApiResponse {
     message: String,
 }
 
-#[cfg(not(target_os = "linux"))]
-const BIND_ADDR: &str = "127.0.0.1:3000";
-
-#[cfg(target_os = "linux")]
 const BIND_ADDR: &str = "0.0.0.0:3000";
 
 #[tokio::main]
