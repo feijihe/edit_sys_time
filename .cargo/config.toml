@@ -1,0 +1,21 @@
+# Raspberry Pi 3/4/5 (64-bit, musl) - self-contained, no external toolchain needed
+[target.aarch64-unknown-linux-musl]
+linker = "rust-lld"
+
+# Raspberry Pi 2/3/Zero (32-bit, musl)
+[target.armv7-unknown-linux-musleabihf]
+linker = "rust-lld"
+
+# Raspberry Pi 1/Zero (older 32-bit, musl)
+[target.arm-unknown-linux-musleabihf]
+linker = "rust-lld"
+
+# GNU targets (require external toolchain or cross-rs)
+[target.aarch64-unknown-linux-gnu]
+linker = "aarch64-linux-gnu-gcc"
+
+[target.armv7-unknown-linux-gnueabihf]
+linker = "arm-linux-gnueabihf-gcc"
+
+[target.arm-unknown-linux-gnueabihf]
+linker = "arm-linux-gnueabihf-gcc"

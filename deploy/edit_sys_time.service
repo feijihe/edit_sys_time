@@ -1,0 +1,15 @@
+[Unit]
+Description=Edit System Time HTTP Service
+After=network.target
+
+[Service]
+Type=simple
+User=root
+ExecStart=/usr/local/bin/edit_sys_time
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
