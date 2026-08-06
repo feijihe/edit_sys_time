@@ -123,6 +123,11 @@ async fn set_time(Json(req): Json<SetTimeRequest>) -> (StatusCode, Json<ApiRespo
                 .map(|d| d.to_rfc3339())
                 .unwrap_or_else(|| ts.to_string());
             info!("System time set to {} UTC (timestamp: {})", utc_dt, ts);
+
+            if let Err(e) = sync_hwclock() {
+                error!("Failed to sync hardware clock: {}", e);
+            }
+
             (
                 StatusCode::OK,
                 Json(ApiResponse {
@@ -333,6 +338,30 @@ fn set_system_time(timestamp: i64) -> Result<(), String> {
     } else {
         Err(std::io::Error::last_os_error().to_string())
     }
+}
+
+#[cfg(target_os = "linux")]
+fn sync_hwclock() -> Result<(), String> {
+    use std::process::Command;
+
+    let output = Command::new("hwclock").arg("--systohc").output();
+
+    match output {
+        Ok(o) if o.status.success() => {
+            info!("Hardware clock synced from system time");
+            Ok(())
+        }
+        Ok(o) => {
+            let stderr = String::from_utf8_lossy(&o.stderr);
+            Err(format!("hwclock --systohc failed: {}", stderr.trim()))
+        }
+        Err(e) => Err(format!("Failed to run hwclock: {}", e)),
+    }
+}
+
+#[cfg(not(target_os = "linux"))]
+fn sync_hwclock() -> Result<(), String> {
+    Ok(())
 }
 
 #[cfg(not(target_os = "linux"))]

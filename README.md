@@ -199,6 +199,21 @@ timedatectl show -p NTP
 # 输出 NTP=yes 表示已恢复
 ```
 
+## 关于硬件时钟 (RTC)
+
+树莓派默认没有 RTC 电池，关机后时钟停走，开机时从 `/etc/fake-hwclock.data` 恢复上次记录的时间。本服务在每次设置时间后调用 `hwclock --systohc` 写入该文件，确保重启后自动恢复。
+
+行为说明：
+- 修改时间为 `15:30:00` → 写入 fake-hwclock
+- 关机 2 小时后开机 → 时间恢复为 `15:30:00`（非 `17:30:00`）
+- `hwclock --systohc` 同时兼容 RTC 硬件，有 RTC 模块时会写入真实 RTC 芯片
+
+如果安装 RTC 模块（如 DS3231）：
+- 启用 I2C 接口并加载对应的设备树覆盖（dtoverlay）
+- 内核启动时直接从 RTC 芯片读取时间，不再使用 fake-hwclock
+- 关机期间 RTC 芯片由电池供电，时间持续走时
+- 本服务的 `hwclock --systohc` 也会直接写入 RTC 芯片
+
 ## 注意事项
 
 - 修改系统时钟需要 **root 权限**，systemd 服务已配置 `User=root`
