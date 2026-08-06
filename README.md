@@ -64,6 +64,36 @@ Rust HTTP 服务，部署在树莓派上，接收 HTTP 请求修改系统日期�
 {"success": false, "message": "错误信息"}
 ```
 
+### POST /api/timezone
+
+单独修改系统时区，不改时间。
+
+| 字段 | 类型 | 必填 | 说明 |
+|---|---|---|---|
+| `timezone` | string | 是 | IANA 时区名或 UTC 偏移 |
+
+`timezone` 支持三种格式：
+
+- **IANA 时区名**：`Asia/Shanghai`, `America/New_York`, `UTC` 等
+- **偏移格式**：`+08:00`, `+0800`, `-05:00` → 内部映射为 `Etc/GMT∓N`
+- **UTC 前缀**：`UTC+08:00`, `UTC+8`, `UTC-05:00` 等
+
+注：仅支持整小时偏移（如 `+08:00`），半/刻钟偏移（如 `+05:30`）请用 IANA 名（如 `Asia/Kolkata`）。
+
+**请求示例**：
+
+```json
+{ "timezone": "Asia/Shanghai" }
+{ "timezone": "+08:00" }
+{ "timezone": "UTC+8" }
+```
+
+**返回**：
+
+```json
+{"success": true, "message": "Timezone changed to Asia/Shanghai"}
+```
+
 ## 测试
 
 树莓派上启动服务后：
@@ -93,6 +123,11 @@ curl -X POST http://localhost:3000/api/time \
 curl -X POST http://localhost:3000/api/time \
   -H "Content-Type: application/json" \
   -d '{"datetime": "2026-08-06 15:30:00", "timezone": "+08:00"}'
+
+# 6. 修改系统时区
+curl -X POST http://localhost:3000/api/timezone \
+  -H "Content-Type: application/json" \
+  -d '{"timezone": "America/New_York"}'
 
 # 验证
 date

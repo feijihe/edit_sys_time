@@ -24,6 +24,11 @@ struct SetTimeRequest {
     timezone: Option<String>,
 }
 
+#[derive(Deserialize)]
+struct SetTimezoneRequest {
+    timezone: String,
+}
+
 #[derive(Serialize)]
 struct ApiResponse {
     success: bool,
@@ -41,7 +46,9 @@ async fn main() {
 
     disable_ntp();
 
-    let app = Router::new().route("/api/time", post(set_time));
+    let app = Router::new()
+        .route("/api/time", post(set_time))
+        .route("/api/timezone", post(set_timezone));
 
     let listener = match tokio::net::TcpListener::bind(BIND_ADDR).await {
         Ok(l) => {
@@ -147,6 +154,133 @@ async fn set_time(Json(req): Json<SetTimeRequest>) -> (StatusCode, Json<ApiRespo
             )
         }
     }
+}
+
+async fn set_timezone(Json(req): Json<SetTimezoneRequest>) -> (StatusCode, Json<ApiResponse>) {
+    let trimmed = req.timezone.trim();
+
+    if trimmed.is_empty() {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(ApiResponse {
+                success: false,
+                message: "timezone is required".to_string(),
+            }),
+        );
+    }
+
+    let tz_name = match resolve_timezone_name(trimmed) {
+        Ok(n) => n,
+        Err(msg) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(ApiResponse { success: false, message: msg }),
+            );
+        }
+    };
+
+    match change_system_timezone(&tz_name) {
+        Ok(()) => {
+            info!("System timezone changed to {}", tz_name);
+            (
+                StatusCode::OK,
+                Json(ApiResponse {
+                    success: true,
+                    message: format!("Timezone changed to {}", tz_name),
+                }),
+            )
+        }
+        Err(msg) => {
+            error!("Failed to change timezone: {}", msg);
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ApiResponse {
+                    success: false,
+                    message: msg,
+                }),
+            )
+        }
+    }
+}
+
+fn resolve_timezone_name(input: &str) -> Result<String, String> {
+    if let Ok(_tz) = input.parse::<Tz>() {
+        return Ok(input.to_string());
+    }
+
+    if let Some(offset_secs) = parse_offset_str(input) {
+        if offset_secs % 3600 == 0 {
+            if let Some(name) = etc_gmt_name(offset_secs) {
+                return Ok(name);
+            }
+        }
+    }
+
+    let upper = input.to_uppercase();
+    if upper.starts_with("UTC") {
+        let rest = upper[3..].trim();
+        if let Some(offset_secs) = parse_offset_utc(rest) {
+            if offset_secs % 3600 == 0 {
+                if let Some(name) = etc_gmt_name(offset_secs) {
+                    return Ok(name);
+                }
+            }
+        }
+    }
+
+    Err(format!(
+        "Unknown timezone: '{}'. Use IANA name (e.g. Asia/Shanghai, UTC) or offset (e.g. +08:00, UTC+08:00)",
+        input
+    ))
+}
+
+fn etc_gmt_name(offset_secs: i32) -> Option<String> {
+    let abs_hours = offset_secs.unsigned_abs() / 3600;
+    let name = if offset_secs >= 0 {
+        format!("Etc/GMT-{}", abs_hours)
+    } else {
+        format!("Etc/GMT+{}", abs_hours)
+    };
+    if name.parse::<Tz>().is_ok() {
+        Some(name)
+    } else {
+        None
+    }
+}
+
+fn parse_offset_utc(s: &str) -> Option<i32> {
+    let s = s.trim();
+    if s.is_empty() {
+        return Some(0);
+    }
+    let sign = if s.starts_with('+') {
+        1
+    } else if s.starts_with('-') {
+        -1
+    } else {
+        if let Ok(n) = s.parse::<i32>() {
+            return Some(n * 3600);
+        }
+        return None;
+    };
+    let body = &s[1..];
+    let parts: Vec<&str> = body.split(':').collect();
+    if parts.len() == 2 {
+        let h: i32 = parts[0].parse().ok()?;
+        let m: i32 = parts[1].parse().ok()?;
+        if h > 14 || m > 59 {
+            return None;
+        }
+        return Some(sign * (h * 3600 + m * 60));
+    }
+    if parts.len() == 1 {
+        let h: i32 = parts[0].parse().ok()?;
+        if h > 14 {
+            return None;
+        }
+        return Some(sign * (h * 3600));
+    }
+    None
 }
 
 fn parse_timezone(raw: Option<&str>) -> Result<Option<TzInput>, String> {
@@ -322,6 +456,29 @@ fn detect_system_timezone() -> Tz {
     }
     warn!("Cannot detect system timezone, falling back to UTC");
     Tz::UTC
+}
+
+#[cfg(target_os = "linux")]
+fn change_system_timezone(tz_name: &str) -> Result<(), String> {
+    use std::process::Command;
+
+    let output = Command::new("timedatectl")
+        .args(["set-timezone", tz_name])
+        .output();
+
+    match output {
+        Ok(o) if o.status.success() => Ok(()),
+        Ok(o) => {
+            let stderr = String::from_utf8_lossy(&o.stderr);
+            Err(format!("timedatectl set-timezone failed: {}", stderr.trim()))
+        }
+        Err(e) => Err(format!("Failed to run timedatectl: {}", e)),
+    }
+}
+
+#[cfg(not(target_os = "linux"))]
+fn change_system_timezone(_tz_name: &str) -> Result<(), String> {
+    Err("Changing system timezone is only supported on Linux".to_string())
 }
 
 #[cfg(target_os = "linux")]
