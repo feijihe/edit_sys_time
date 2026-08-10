@@ -1,6 +1,6 @@
 use axum::{
     http::StatusCode,
-    routing::post,
+    routing::{get, post},
     Json, Router,
 };
 use chrono::{DateTime, FixedOffset, NaiveDateTime, TimeZone, Utc};
@@ -48,7 +48,8 @@ async fn main() {
 
     let app = Router::new()
         .route("/api/time", post(set_time))
-        .route("/api/timezone", post(set_timezone));
+        .route("/api/timezone", post(set_timezone))
+        .route("/api/ping", get(ping));
 
     let listener = match tokio::net::TcpListener::bind(BIND_ADDR).await {
         Ok(l) => {
@@ -93,6 +94,21 @@ fn disable_ntp() {
 #[cfg(not(target_os = "linux"))]
 fn disable_ntp() {
     info!("NTP disable skipped (not running on Linux)");
+}
+
+async fn ping() -> (StatusCode, Json<serde_json::Value>) {
+    let now = chrono::Utc::now();
+    let local = now.with_timezone(&(*SYSTEM_TZ));
+    (
+        StatusCode::OK,
+        Json(serde_json::json!({
+            "success": true,
+            "service": "edit_sys_time",
+            "server_time": now.to_rfc3339(),
+            "local_time": local.to_rfc3339(),
+            "timezone": SYSTEM_TZ.name(),
+        })),
+    )
 }
 
 async fn set_time(Json(req): Json<SetTimeRequest>) -> (StatusCode, Json<ApiResponse>) {
@@ -505,14 +521,30 @@ fn sync_hwclock() -> Result<(), String> {
 
     match output {
         Ok(o) if o.status.success() => {
-            info!("Hardware clock synced from system time");
+            info!("Hardware clock synced from system time (hwclock)");
+            return Ok(());
+        }
+        Ok(o) => {
+            let stderr = String::from_utf8_lossy(&o.stderr);
+            info!("hwclock --systohc failed: {}, trying fake-hwclock...", stderr.trim());
+        }
+        Err(_) => {
+            info!("hwclock not found, trying fake-hwclock...");
+        }
+    }
+
+    let output = Command::new("fake-hwclock").arg("save").output();
+
+    match output {
+        Ok(o) if o.status.success() => {
+            info!("Hardware clock synced from system time (fake-hwclock)");
             Ok(())
         }
         Ok(o) => {
             let stderr = String::from_utf8_lossy(&o.stderr);
-            Err(format!("hwclock --systohc failed: {}", stderr.trim()))
+            Err(format!("fake-hwclock save failed: {}", stderr.trim()))
         }
-        Err(e) => Err(format!("Failed to run hwclock: {}", e)),
+        Err(e) => Err(format!("Neither hwclock nor fake-hwclock available: {}", e)),
     }
 }
 
