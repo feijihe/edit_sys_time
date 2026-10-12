@@ -127,7 +127,7 @@ curl -X POST http://localhost:3000/api/time \
 # 6. 修改系统时区
 curl -X POST http://localhost:3000/api/timezone \
   -H "Content-Type: application/json" \
-  -d '{"timezone": "America/New_York"}'
+  -d '{"timezone": "Asia/Shanghai"}'
 
 # 验证
 date
